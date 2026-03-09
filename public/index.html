@@ -73,7 +73,7 @@
                                     <div>Provide the magic numbers to the sender.</div>
                                     <div x-text="magicNumbers.join(' ')" class="magic-numbers"></div>
                                     <div class="status">Waiting for message...</div>
-                                <div>
+                                </div>
                             </template>
 
                             <template x-if="message">
@@ -92,9 +92,8 @@
 
     <div id="question-mark" @click="showAbout">?</div>
 
-    <script src="https://cdn.jsdelivr.net/gh/alpinejs/alpine@v2.8.0/dist/alpine.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/js-base64@3.6.0/base64.min.js"></script>
-    <script src="https://bundle.run/copy-to-clipboard@3.3.1"></script>
-    <script src="script.js"></script>
+    <script src="/vendor/alpine.min.js"></script>
+    <script src="/vendor/base64.min.js"></script>
+    <script src="/script.js"></script>
 </body>
 </html>

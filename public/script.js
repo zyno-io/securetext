@@ -26,7 +26,7 @@ function app() {
             this.textDecoder = new TextDecoder();
 
             window.addEventListener('hashchange', () => location.reload());
-            setTimeout(() => this.$refs.message.focus(), 100);
+            setTimeout(() => this.$refs.message?.focus(), 100);
         },
 
         _handleWsOpened() {
@@ -40,16 +40,23 @@ function app() {
             try {
                 json = JSON.parse(e.data);
             } catch (err) {
-                console.log(e.data);
-                throw new Error('failed to parse JSON:' + err);
+                console.error('Failed to parse message:', err);
+                return;
+            }
+
+            if (!json.type || typeof json.type !== 'string') {
+                console.error('Message missing type field');
+                return;
             }
 
             let fn = 'handle' + json.type.substr(0, 1).toUpperCase() + json.type.substr(1) + 'Message';
             if (this[fn]) {
-                this[fn](json);
+                Promise.resolve(this[fn](json)).catch((err) => {
+                    console.error('Error handling message:', err);
+                    this.error = 'An error occurred while processing data. Please refresh and try again.';
+                });
             } else {
-                console.log(json);
-                throw new Error('unexpected message type');
+                console.error('Unexpected message type:', json.type);
             }
         },
 
@@ -59,7 +66,7 @@ function app() {
             }
         },
 
-        _handleWsError(e) {
+        _handleWsError(_e) {
             if (this.role === 'receiver')
                 this.error = 'There was an issue connecting to the sender. Please ensure the link is valid and has only been used once.';
             else
@@ -104,8 +111,8 @@ function app() {
                     container.classList.remove('animate');
                 }, 1000);
 
-                copyToClipboard(this.link);
-                this.$refs.message.focus();
+                navigator.clipboard.writeText(this.link);
+                this.$refs.message?.focus();
             }
         },
 
@@ -129,21 +136,26 @@ function app() {
 
         async sendMessage(e) {
             e.preventDefault();
-            this.hasFinished = true;
 
-            const aesKey = await this.generateAESKey();
-            const encKeyBuf = await this.encryptAESKey(aesKey);
-            const { encryptedMessage: encMsgBuf, iv } = await this.encryptMessage(aesKey, this.messageInput);
-            const encKeyB64 = Base64.fromUint8Array(new Uint8Array(encKeyBuf));
-            const encMsgB64 = Base64.fromUint8Array(new Uint8Array(encMsgBuf));
-            const encIvB64 = Base64.fromUint8Array(new Uint8Array(iv));
-            this.send({
-                type: 'encmsg',
-                key: encKeyB64,
-                msg: encMsgB64,
-                iv: encIvB64
-            });
-            this.ws.close();
+            try {
+                const aesKey = await this.generateAESKey();
+                const encKeyBuf = await this.encryptAESKey(aesKey);
+                const { encryptedMessage: encMsgBuf, iv } = await this.encryptMessage(aesKey, this.messageInput);
+                const encKeyB64 = Base64.fromUint8Array(new Uint8Array(encKeyBuf));
+                const encMsgB64 = Base64.fromUint8Array(new Uint8Array(encMsgBuf));
+                const encIvB64 = Base64.fromUint8Array(new Uint8Array(iv));
+                this.send({
+                    type: 'encmsg',
+                    key: encKeyB64,
+                    msg: encMsgB64,
+                    iv: encIvB64
+                });
+                this.hasFinished = true;
+                this.ws.close();
+            } catch (err) {
+                console.error('Encryption failed:', err);
+                this.error = 'Failed to encrypt the message. Please refresh and try again.';
+            }
         },
 
         async generateAESKey() {
@@ -223,15 +235,19 @@ function app() {
         },
 
         async handleEncmsgMessage(msg) {
-            this.hasFinished = true;
-
-            const encKeyBuf = Base64.toUint8Array(msg.key);
-            const key = await this.decryptAESKey(encKeyBuf);
-            const encMsgBuf = Base64.toUint8Array(msg.msg);
-            const encIvBuf = Base64.toUint8Array(msg.iv);
-            const message = await this.decryptMessage(key, encIvBuf, encMsgBuf)
-            this.message = message;
-            this.ws.close();
+            try {
+                const encKeyBuf = Base64.toUint8Array(msg.key);
+                const key = await this.decryptAESKey(encKeyBuf);
+                const encMsgBuf = Base64.toUint8Array(msg.msg);
+                const encIvBuf = Base64.toUint8Array(msg.iv);
+                const message = await this.decryptMessage(key, encIvBuf, encMsgBuf);
+                this.message = message;
+                this.hasFinished = true;
+                this.ws.close();
+            } catch (err) {
+                console.error('Decryption failed:', err);
+                this.error = 'Failed to decrypt the message. The data may have been corrupted.';
+            }
         },
 
         async decryptAESKey(encKeyBuf) {
@@ -283,7 +299,7 @@ function app() {
                 `through a middleman server, hosted for your convenience by Signal24.\n\n` +
                 `When a receiver connects to the sender (via the middleman), it generates an asymmetric ` +
                 `key pair for RSA encryption. It then forwards the public key to the sender.\n\n` +
-                `When the sender clicks the Send button, a 2048-bit AES key is generated by the sender. ` +
+                `When the sender clicks the Send button, a 128-bit AES-GCM key is generated by the sender. ` +
                 `That key is used to encrypt the message. The AES key is then encrypted using the receiver's public RSA key.\n\n` +
                 `Both the encrypted message and the RSA-encrypted AES key are then transmitted to the receiver, ` +
                 `at which point the receiver uses its RSA private key to decrypt the AES key, and then in turn, decrypt the message.\n\n` +
