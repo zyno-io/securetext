@@ -1,7 +1,11 @@
 .env*
 .vscode
-_resources
-node_modules
-npm-debug.log
-*/.DS_Store
+.serena
 .git
+.yarn
+node_modules
+dist
+*.md
+.DS_Store
+.dockerignore
+docker-compose.yml

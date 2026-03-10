@@ -15,23 +15,30 @@ The server only relays encrypted data — it never sees the plaintext. As an add
 ## Tech stack
 
 - **Server:** Node.js, Fastify, WebSocket (`ws`)
-- **Client:** Vanilla JS, Alpine.js, Web Crypto API
-- **Language:** TypeScript (server)
+- **Client:** Alpine.js, Web Crypto API, bundled with esbuild
+- **Language:** TypeScript (server), JavaScript (client, type-checked)
+- **Package manager:** Yarn Berry
 
 ## Development
 
 ```bash
-npm install
-npm run dev       # start dev server with hot reload
-npm test          # run tests
-npm run typecheck # type-check without emitting
-npm run build     # compile TypeScript to dist/
-npm start         # run compiled server
+yarn install
+yarn dev          # build client + start dev server with hot reload
+yarn test         # run tests
+yarn typecheck    # type-check server and client
+yarn build        # compile server + bundle/minify client
+yarn start        # run compiled server
 ```
 
-Requires Node.js 22+.
+Requires Node.js 22+ and Corepack enabled (`corepack enable`).
 
 ## Docker
+
+```bash
+docker compose up --build
+```
+
+Or manually:
 
 ```bash
 docker build -t securetext .
