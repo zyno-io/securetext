@@ -8,7 +8,7 @@ const port = Number(process.env.PORT) || 3000;
 
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' 'unsafe-eval'",
   "style-src 'self' https://fonts.googleapis.com",
   "font-src https://fonts.gstatic.com",
   "connect-src 'self'",
