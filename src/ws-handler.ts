@@ -122,11 +122,11 @@ export function handleConnection(ws: WebSocket, request: FastifyRequest, log: Fa
     log.error('ws error: %s', err.message);
   });
 
-  ws.on('message', (data) => {
+  ws.on('message', (data, isBinary) => {
     resetTimeout(conn);
     if (conn.peer) {
       resetTimeout(conn.peer);
-      conn.peer.ws.send(data);
+      conn.peer.ws.send(data, { binary: isBinary });
     } else {
       log.error('data sent without established pipe');
       ws.close();
