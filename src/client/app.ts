@@ -102,17 +102,20 @@ export function app(): Record<string, unknown> {
         if (this.role === 'receiver') setupReceiver(this);
       });
       this.ws.addEventListener('message', (e: MessageEvent) => onMessage(this, e));
-      this.ws.addEventListener('close', () => {
-        if (!this.hasFinished && !this.error) {
+      this.ws.addEventListener('close', (e: CloseEvent) => {
+        if (this.hasFinished || this.error) return;
+        if (e.code === 4404) {
+          this.error = 'This link is invalid or has expired.';
+        } else if (e.code === 4409) {
+          this.error = 'A receiver has already connected to this link.';
+        } else if (e.code === 4429) {
+          this.error = 'Too many connections. Please try again later.';
+        } else {
           this.error = 'It looks like there was an issue with the connection to the server. Please refresh and try again.';
         }
       });
       this.ws.addEventListener('error', () => {
-        if (this.role === 'receiver') {
-          this.error = 'There was an issue connecting to the sender. Please ensure the link is valid and has only been used once.';
-        } else {
-          this.error = 'There was an issue connecting to the server. Please refresh the page and try again.';
-        }
+        this.error = 'There was an issue connecting to the server. Please refresh the page and try again.';
       });
 
       window.addEventListener('hashchange', () => location.reload());
