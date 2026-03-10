@@ -15,16 +15,24 @@ const AES_PARAMS: AesKeyGenParams = {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+function toSafeBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  const safeBytes = new Uint8Array(bytes.byteLength);
+  safeBytes.set(bytes);
+  return safeBytes;
+}
+
 export async function generateKeyPair(): Promise<CryptoKeyPair> {
   return crypto.subtle.generateKey(RSA_PARAMS, true, ['encrypt', 'decrypt']);
 }
 
-export async function exportPublicKey(keyPair: CryptoKeyPair): Promise<JsonWebKey> {
-  return crypto.subtle.exportKey('jwk', keyPair.publicKey);
+export async function exportPublicKey(keyPair: CryptoKeyPair): Promise<string> {
+  const spki = await crypto.subtle.exportKey('spki', keyPair.publicKey);
+  return Base64.fromUint8Array(new Uint8Array(spki));
 }
 
-export async function importPublicKey(jwk: JsonWebKey): Promise<CryptoKey> {
-  return crypto.subtle.importKey('jwk', jwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, true, ['encrypt']);
+export async function importPublicKey(publicKey: string): Promise<CryptoKey> {
+  const keyBytes = Base64.toUint8Array(publicKey);
+  return crypto.subtle.importKey('spki', toSafeBytes(keyBytes), { name: 'RSA-OAEP', hash: 'SHA-256' }, true, ['encrypt']);
 }
 
 export async function encryptPayload(publicKey: CryptoKey, message: string): Promise<EncryptedPayload> {
@@ -48,19 +56,15 @@ export async function encryptPayload(publicKey: CryptoKey, message: string): Pro
 export async function decryptPayload(keyPair: CryptoKeyPair, payload: EncryptedPayload): Promise<string> {
   // Decrypt the AES key with our RSA private key
   const encKey = Base64.toUint8Array(payload.key);
-  const keyBuf = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, keyPair.privateKey, encKey.buffer as ArrayBuffer);
+  const keyBuf = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, keyPair.privateKey, toSafeBytes(encKey));
   const aesJwk: JsonWebKey = JSON.parse(decoder.decode(keyBuf));
   const aesKey = await crypto.subtle.importKey('jwk', aesJwk, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
 
   // Decrypt the message
-  const iv = Base64.toUint8Array(payload.iv) as Uint8Array<ArrayBuffer>;
+  const iv = toSafeBytes(Base64.toUint8Array(payload.iv));
   const encMsg = Base64.toUint8Array(payload.msg);
-  const msgBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, encMsg.buffer as ArrayBuffer);
+  const msgBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, toSafeBytes(encMsg));
   return decoder.decode(msgBuf);
-}
-
-export function generateMagicNumbers(): number[] {
-  return Array.from(crypto.getRandomValues(new Uint8Array(3)));
 }
 
 export interface EncryptedPayload {

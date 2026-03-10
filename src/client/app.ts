@@ -4,27 +4,43 @@ import {
   importPublicKey,
   encryptPayload,
   decryptPayload,
-  generateMagicNumbers,
   type EncryptedPayload,
 } from './crypto.js';
+import {
+  buildShareLink,
+  createShareSecret,
+  deriveMagicNumbers,
+  parseShareHash,
+  signEncryptedPayload,
+  signPubkeyMessage,
+  verifyEncryptedPayload,
+  verifyPubkeyMessage,
+} from './protocol.js';
 
 interface WsHelloMessage { type: 'hello'; uuid: string }
-interface WsPubkeyMessage { type: 'pubkey'; key: JsonWebKey; magicNumbers: number[] }
-interface WsEncmsgMessage { type: 'encmsg'; key: string; msg: string; iv: string }
+interface WsPubkeyMessage { type: 'pubkey'; key: string; mac: string }
+interface WsEncmsgMessage { type: 'encmsg'; key: string; msg: string; iv: string; mac: string }
 interface WsDisconnectMessage { type: 'sdisconnect' | 'rdisconnect' }
 type WsMessage = WsHelloMessage | WsPubkeyMessage | WsEncmsgMessage | WsDisconnectMessage;
 
 const MESSAGE_HANDLERS: Record<string, (ctx: AppContext, msg: WsMessage) => void | Promise<void>> = {
   hello(ctx, msg) {
     if (msg.type !== 'hello') return;
-    ctx.link = location.href + '#' + msg.uuid;
+    ctx.link = buildShareLink(location.href, msg.uuid, ctx.sharedSecret!);
   },
 
   async pubkey(ctx, msg) {
     if (msg.type !== 'pubkey') return;
+    const isValid = await verifyPubkeyMessage(ctx.sharedSecret!, msg.key, msg.mac);
+    if (!isValid) {
+      ctx.error = 'Failed to verify the recipient connection. Please ask the recipient for a new link.';
+      ctx.ws.close();
+      return;
+    }
+
     ctx.publicKey = await importPublicKey(msg.key);
     ctx.isConnected = true;
-    ctx.magicNumbers = msg.magicNumbers;
+    ctx.magicNumbers = await deriveMagicNumbers(msg.key);
   },
 
   sdisconnect(ctx) {
@@ -41,6 +57,13 @@ const MESSAGE_HANDLERS: Record<string, (ctx: AppContext, msg: WsMessage) => void
     if (msg.type !== 'encmsg') return;
     try {
       const payload: EncryptedPayload = { key: msg.key, msg: msg.msg, iv: msg.iv };
+      const isValid = await verifyEncryptedPayload(ctx.sharedSecret!, payload, msg.mac);
+      if (!isValid) {
+        ctx.error = 'Failed to verify the message. The data may have been tampered with.';
+        ctx.ws.close();
+        return;
+      }
+
       ctx.message = await decryptPayload(ctx.keyPair!, payload);
       ctx.hasFinished = true;
       ctx.ws.close();
@@ -61,11 +84,13 @@ interface AppContext {
   messageInput: string | null;
   message: string | null;
   hasFinished: boolean;
+  showingAbout: boolean;
 
   // Internal
   ws: WebSocket;
   publicKey: CryptoKey | null;
   keyPair: CryptoKeyPair | null;
+  sharedSecret: string | null;
 
   // Alpine magics
   $refs: Record<string, HTMLElement>;
@@ -81,9 +106,11 @@ export function app(): Record<string, unknown> {
     messageInput: null,
     message: null,
     hasFinished: false,
+    showingAbout: false,
     ws: null!,
     publicKey: null,
     keyPair: null,
+    sharedSecret: null,
     $refs: null!,
   };
 
@@ -92,8 +119,14 @@ export function app(): Record<string, unknown> {
 
     init(this: AppContext) {
       const baseUrl = location.protocol.replace('http', 'ws') + '//' + location.host + '/ws';
-      const senderId = location.hash.length > 2 ? location.hash.substring(1) : null;
-      const url = senderId ? `${baseUrl}?sender=${senderId}` : baseUrl;
+      const { senderId, sharedSecret, isLegacy } = parseShareHash(location.hash);
+      if (isLegacy) {
+        this.error = 'This link is invalid or has expired. Please ask the sender for a new link.';
+        return;
+      }
+
+      this.sharedSecret = sharedSecret ?? createShareSecret();
+      const url = senderId ? `${baseUrl}?sender=${encodeURIComponent(senderId)}` : baseUrl;
 
       this.role = senderId ? 'receiver' : 'sender';
 
@@ -137,8 +170,14 @@ export function app(): Record<string, unknown> {
     async sendMessage(this: AppContext, e: Event) {
       e.preventDefault();
       try {
+        if (!this.publicKey || !this.sharedSecret || this.messageInput === null) {
+          this.error = 'The secure channel is not ready yet. Please refresh and try again.';
+          return;
+        }
+
         const payload = await encryptPayload(this.publicKey!, this.messageInput!);
-        this.ws.send(JSON.stringify({ type: 'encmsg', ...payload }));
+        const mac = await signEncryptedPayload(this.sharedSecret, payload);
+        this.ws.send(JSON.stringify({ type: 'encmsg', ...payload, mac }));
         this.hasFinished = true;
         this.ws.close();
       } catch (err) {
@@ -147,22 +186,6 @@ export function app(): Record<string, unknown> {
       }
     },
 
-    showAbout() {
-      alert(
-        `Hi there! Thanks for checking out securetext.io.\n\n` +
-          `This quick & simple web app establishes a connection between a sender and a receiver ` +
-          `through a middleman server, hosted for your convenience by Zyno Consulting.\n\n` +
-          `When a receiver connects to the sender (via the middleman), it generates an asymmetric ` +
-          `key pair for RSA encryption. It then forwards the public key to the sender.\n\n` +
-          `When the sender clicks the Send button, a 128-bit AES-GCM key is generated by the sender. ` +
-          `That key is used to encrypt the message. The AES key is then encrypted using the receiver's public RSA key.\n\n` +
-          `Both the encrypted message and the RSA-encrypted AES key are then transmitted to the receiver, ` +
-          `at which point the receiver uses its RSA private key to decrypt the AES key, and then in turn, decrypt the message.\n\n` +
-          `This provides a convenient end-to-end encrypted method of sending simple text data between a sender and receiver.\n\n` +
-          `As an added layer of security, 3 unique numbers are generated by the receiver so that the sender can verify that they are ` +
-          `in fact sending to the expected recipient.`,
-      );
-    },
   };
 }
 
@@ -192,9 +215,16 @@ function onMessage(ctx: AppContext, e: MessageEvent) {
 }
 
 async function setupReceiver(ctx: AppContext) {
-  ctx.magicNumbers = generateMagicNumbers();
+  if (!ctx.sharedSecret) {
+    ctx.error = 'This link is invalid or has expired. Please ask the sender for a new link.';
+    ctx.ws.close();
+    return;
+  }
+
   ctx.keyPair = await generateKeyPair();
   const publicKey = await exportPublicKey(ctx.keyPair);
-  ctx.ws.send(JSON.stringify({ type: 'pubkey', key: publicKey, magicNumbers: ctx.magicNumbers }));
+  ctx.magicNumbers = await deriveMagicNumbers(publicKey);
+  const mac = await signPubkeyMessage(ctx.sharedSecret, publicKey);
+  ctx.ws.send(JSON.stringify({ type: 'pubkey', key: publicKey, mac }));
   ctx.isConnected = true;
 }

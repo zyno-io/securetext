@@ -27,7 +27,7 @@ COPY package.json yarn.lock .yarnrc.yml ./
 RUN yarn workspaces focus --production
 
 COPY --from=build --chown=app:app /app/dist ./dist
-COPY --from=build --chown=app:app /app/public ./public
+COPY --from=build --chown=app:app /app/dist/public ./public
 
 USER app
 

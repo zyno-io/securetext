@@ -70,10 +70,15 @@ function cleanup(conn: Connection) {
   }
 }
 
-export function handleConnection(ws: WebSocket, request: FastifyRequest, log: FastifyBaseLogger) {
+export function handleConnection(
+  ws: WebSocket,
+  request: FastifyRequest,
+  log: FastifyBaseLogger,
+  clientIp = request.ip,
+) {
   const query = request.query as Record<string, string>;
   const senderUuid = query.sender;
-  const ip = request.ip;
+  const ip = clientIp;
 
   if (!trackIp(ip)) {
     ws.close(4429, 'too many connections');
