@@ -3,7 +3,7 @@ import esbuild from 'esbuild';
 const minify = process.argv.includes('--minify');
 
 await esbuild.build({
-  entryPoints: ['src/client/index.js'],
+  entryPoints: ['src/client/index.ts'],
   bundle: true,
   format: 'iife',
   minify,

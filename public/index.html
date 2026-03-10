@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
     <title>securetext.io</title>
 </head>
-<body x-data="app()" x-init="init">
+<body x-data="app">
     <h2>securetext.io</h2>
 
     <template x-if="error">
@@ -92,6 +92,6 @@
 
     <div id="question-mark" @click="showAbout">?</div>
 
-    <script src="/script.js"></script>
+    <script src="/script.js" defer></script>
 </body>
 </html>
