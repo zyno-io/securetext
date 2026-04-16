@@ -19,7 +19,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@fastify/static": "^9.0.0",
+    "@fastify/static": "^9.1.1",
     "@fastify/websocket": "^11.2.0",
     "alpinejs": "^3.15.8",
     "base-x": "^5.0.1",
