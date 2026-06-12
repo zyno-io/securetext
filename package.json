@@ -30,7 +30,7 @@
     "@types/alpinejs": "^3.13.11",
     "@types/node": "^25.4.0",
     "@types/ws": "^8.18.1",
-    "esbuild": "^0.27.3",
+    "esbuild": "^0.28.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18",
